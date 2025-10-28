@@ -2,7 +2,7 @@ from mcp.server import Server
 from mcp.types import Tool, TextContent
 import json
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 import urllib.request
 import urllib.error
 import time
@@ -168,12 +168,12 @@ def estimate_tokens(text: str) -> int:
 class ModelBackend:
     """Abstract base for different local model backends"""
 
-    async def generate(self, messages: List[Dict[str, str]], model: str) -> tuple[str, int, int, float]:
+    async def generate(self, messages: List[Dict[str, str]], model: str) -> Tuple[str, int, int, float]:
         """
         Generate response from model.
 
         Returns:
-            tuple: (response_text, tokens_sent, tokens_received, duration_seconds)
+            Tuple: (response_text, tokens_sent, tokens_received, duration_seconds)
         """
         raise NotImplementedError
 
@@ -184,7 +184,7 @@ class OllamaBackend(ModelBackend):
     def __init__(self, base_url: str = "http://localhost:11434"):
         self.base_url = base_url
 
-    async def generate(self, messages: List[Dict[str, str]], model: str) -> tuple[str, int, int, float]:
+    async def generate(self, messages: List[Dict[str, str]], model: str) -> Tuple[str, int, int, float]:
         start_time = time.time()
 
         # Calculate input tokens
@@ -214,7 +214,7 @@ class LMStudioBackend(ModelBackend):
     def __init__(self, base_url: str = "http://localhost:1234/v1"):
         self.base_url = base_url
 
-    async def generate(self, messages: List[Dict[str, str]], model: str) -> tuple[str, int, int, float]:
+    async def generate(self, messages: List[Dict[str, str]], model: str) -> Tuple[str, int, int, float]:
         """Call LM Studio's OpenAI-compatible API"""
         start_time = time.time()
 
@@ -261,7 +261,7 @@ class OpenAICompatibleBackend(ModelBackend):
         self.base_url = base_url
         self.api_key = api_key
 
-    async def generate(self, messages: List[Dict[str, str]], model: str) -> tuple[str, int, int, float]:
+    async def generate(self, messages: List[Dict[str, str]], model: str) -> Tuple[str, int, int, float]:
         start_time = time.time()
 
         # Calculate input tokens
