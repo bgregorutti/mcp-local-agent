@@ -116,6 +116,7 @@ You can also specify backend per task:
 3. Claude provides specific feedback
 4. Local model iterates (max 3 times)
 5. Claude approves final output
+6. **Comprehensive statistics report generated**
 
 **Example:**
 ```json
@@ -133,6 +134,13 @@ You can also specify backend per task:
 }
 ```
 
+**Statistics Included:**
+- Token usage (sent/received) for local model
+- Estimated token usage for remote model (review)
+- Time spent on each iteration
+- Cost analysis and savings
+- Iteration breakdown
+
 ### 2. `execute_with_local_model` (Quick Delegation)
 
 **Use for:** Simple tasks that don't need review
@@ -144,6 +152,11 @@ You can also specify backend per task:
   "model": "qwen2.5-coder:7b"
 }
 ```
+
+**Statistics Included:**
+- Token usage (sent/received)
+- Duration
+- Model used
 
 ### 3. `provide_feedback` (Review Tool)
 
@@ -191,19 +204,109 @@ View all iterations for a task to see improvement over time.
 - 🎯 Novel/ambiguous requirements
 - 🎯 Final integration & review
 
+## 📊 Statistics & Performance Tracking
+
+### Comprehensive Statistics Report
+
+When a task is completed (approved or max iterations reached), the system generates a detailed statistics report:
+
+```json
+{
+  "task_id": "api-endpoints-001",
+  "status": "approved",
+  "summary": {
+    "total_duration_seconds": 45.3,
+    "total_iterations": 2,
+    "feedback_rounds": 1,
+    "average_iteration_time_seconds": 22.65
+  },
+  "local_model_usage": {
+    "model": "qwen/qwen3-coder-30b",
+    "api_calls": 2,
+    "tokens": {
+      "sent": 1250,
+      "received": 3840,
+      "total": 5090
+    },
+    "time_seconds": 45.3
+  },
+  "remote_model_usage": {
+    "estimated_tokens_for_review": 3840,
+    "estimated_cost_usd": 0.0115
+  },
+  "cost_analysis": {
+    "local_model_cost_usd": 0.00,
+    "estimated_cost_if_fully_remote_usd": 0.0613,
+    "actual_cost_usd": 0.0115,
+    "savings_usd": 0.0498,
+    "savings_percent": 81.2
+  },
+  "iteration_breakdown": [
+    {
+      "iteration": 1,
+      "duration": 23.1,
+      "tokens_sent": 625,
+      "tokens_received": 1920,
+      "timestamp": "2025-01-15T10:30:00"
+    },
+    {
+      "iteration": 2,
+      "duration": 22.2,
+      "tokens_sent": 625,
+      "tokens_received": 1920,
+      "timestamp": "2025-01-15T10:30:45"
+    }
+  ]
+}
+```
+
+### Key Metrics Tracked
+
+1. **Token Usage**
+   - Tokens sent to local model (prompts + context)
+   - Tokens received from local model (generated code)
+   - Estimated tokens for remote review
+
+2. **Time Metrics**
+   - Total duration from start to completion
+   - Per-iteration timing
+   - Average iteration time
+
+3. **Cost Analysis**
+   - Local model cost: $0.00 (free)
+   - Estimated cost if task was done fully remote
+   - Actual cost (remote review only)
+   - Savings in USD and percentage
+
+4. **Efficiency Metrics**
+   - Number of iterations needed
+   - Feedback rounds
+   - Iteration breakdown with detailed stats
+
+### How This Helps You (The Orchestrator)
+
+When you receive the statistics report, you can:
+- **Evaluate effectiveness**: See actual cost savings per task
+- **Optimize delegation**: Learn which tasks work best with local models
+- **Track performance**: Monitor if local models are improving over time
+- **Report to users**: Show concrete savings and efficiency gains
+
 ## 📊 Expected Outcomes
 
 **Cost Savings:** 60-70% reduction in API costs
-- Local models handle routine work
+- Local models handle routine work (free)
 - Remote only for decision-making and review
+- **Real-time tracking** of actual savings
 
 **Quality:** Maintained or improved
 - Iterative feedback ensures standards
 - Claude's review catches issues
+- **Iteration metrics** show quality progression
 
 **Speed:** Faster for many tasks
 - Local models respond instantly
 - Parallel work on multiple tasks
+- **Timing data** shows actual performance
 
 ## 🔧 Troubleshooting
 

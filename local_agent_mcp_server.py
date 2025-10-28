@@ -5,8 +5,160 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 import urllib.request
 import urllib.error
+import time
 
 app = Server("local-agent-server")
+
+
+# ============================================================================
+# Statistics Tracking
+# ============================================================================
+
+class StatisticsTracker:
+    """Track comprehensive statistics for delegation tasks"""
+
+    def __init__(self):
+        self.tasks = {}
+
+    def init_task(self, task_id: str):
+        """Initialize statistics for a new task"""
+        self.tasks[task_id] = {
+            "task_id": task_id,
+            "start_time": time.time(),
+            "end_time": None,
+            "total_duration": None,
+            "local_model_stats": {
+                "calls": 0,
+                "total_tokens_sent": 0,
+                "total_tokens_received": 0,
+                "total_time": 0,
+                "model_name": None
+            },
+            "iterations": [],
+            "feedback_rounds": 0,
+            "status": "in_progress"
+        }
+
+    def record_local_call(self, task_id: str, tokens_sent: int, tokens_received: int,
+                          duration: float, model: str):
+        """Record a local model API call"""
+        if task_id not in self.tasks:
+            self.init_task(task_id)
+
+        stats = self.tasks[task_id]["local_model_stats"]
+        stats["calls"] += 1
+        stats["total_tokens_sent"] += tokens_sent
+        stats["total_tokens_received"] += tokens_received
+        stats["total_time"] += duration
+        stats["model_name"] = model
+
+    def record_iteration(self, task_id: str, iteration_num: int, duration: float,
+                        tokens_sent: int, tokens_received: int):
+        """Record details of a specific iteration"""
+        if task_id not in self.tasks:
+            self.init_task(task_id)
+
+        self.tasks[task_id]["iterations"].append({
+            "iteration": iteration_num,
+            "duration": duration,
+            "tokens_sent": tokens_sent,
+            "tokens_received": tokens_received,
+            "timestamp": datetime.now().isoformat()
+        })
+
+    def record_feedback(self, task_id: str):
+        """Record a feedback round"""
+        if task_id in self.tasks:
+            self.tasks[task_id]["feedback_rounds"] += 1
+
+    def finalize_task(self, task_id: str, status: str = "completed"):
+        """Finalize task statistics"""
+        if task_id in self.tasks:
+            task = self.tasks[task_id]
+            task["end_time"] = time.time()
+            task["total_duration"] = task["end_time"] - task["start_time"]
+            task["status"] = status
+
+    def get_task_report(self, task_id: str) -> Dict[str, Any]:
+        """Generate comprehensive statistics report for a task"""
+        if task_id not in self.tasks:
+            return {"error": "Task not found"}
+
+        task = self.tasks[task_id]
+        local_stats = task["local_model_stats"]
+
+        # Calculate efficiency metrics
+        total_iterations = len(task["iterations"])
+        avg_iteration_time = (local_stats["total_time"] / total_iterations
+                             if total_iterations > 0 else 0)
+
+        # Estimate cost savings (assuming $0.003/1K tokens for input, $0.015/1K tokens for output)
+        # vs local model (free)
+        estimated_remote_cost = (
+            (local_stats["total_tokens_sent"] / 1000) * 0.003 +
+            (local_stats["total_tokens_received"] / 1000) * 0.015
+        )
+
+        # Remote tokens (orchestrator) - these are the tokens sent TO the orchestrator
+        # which is just the final outputs being reviewed
+        estimated_remote_tokens = sum(
+            iter_data["tokens_received"] for iter_data in task["iterations"]
+        )
+        estimated_remote_cost_actual = (estimated_remote_tokens / 1000) * 0.003
+
+        cost_savings = estimated_remote_cost - estimated_remote_cost_actual
+        cost_savings_percent = (cost_savings / estimated_remote_cost * 100
+                               if estimated_remote_cost > 0 else 0)
+
+        report = {
+            "task_id": task_id,
+            "status": task["status"],
+            "summary": {
+                "total_duration_seconds": round(task["total_duration"], 2) if task["total_duration"] else None,
+                "total_iterations": total_iterations,
+                "feedback_rounds": task["feedback_rounds"],
+                "average_iteration_time_seconds": round(avg_iteration_time, 2)
+            },
+            "local_model_usage": {
+                "model": local_stats["model_name"],
+                "api_calls": local_stats["calls"],
+                "tokens": {
+                    "sent": local_stats["total_tokens_sent"],
+                    "received": local_stats["total_tokens_received"],
+                    "total": local_stats["total_tokens_sent"] + local_stats["total_tokens_received"]
+                },
+                "time_seconds": round(local_stats["total_time"], 2)
+            },
+            "remote_model_usage": {
+                "estimated_tokens_for_review": estimated_remote_tokens,
+                "estimated_cost_usd": round(estimated_remote_cost_actual, 4)
+            },
+            "cost_analysis": {
+                "local_model_cost_usd": 0.00,  # Local models are free
+                "estimated_cost_if_fully_remote_usd": round(estimated_remote_cost, 4),
+                "actual_cost_usd": round(estimated_remote_cost_actual, 4),
+                "savings_usd": round(cost_savings, 4),
+                "savings_percent": round(cost_savings_percent, 1)
+            },
+            "iteration_breakdown": task["iterations"]
+        }
+
+        return report
+
+# Global statistics tracker
+stats_tracker = StatisticsTracker()
+
+
+# ============================================================================
+# Token Estimation
+# ============================================================================
+
+def estimate_tokens(text: str) -> int:
+    """
+    Rough token estimation (GPT-style: ~4 chars per token)
+    For more accuracy, could use tiktoken library, but this is sufficient
+    """
+    return len(text) // 4
 
 
 # ============================================================================
@@ -16,7 +168,13 @@ app = Server("local-agent-server")
 class ModelBackend:
     """Abstract base for different local model backends"""
 
-    async def generate(self, messages: List[Dict[str, str]], model: str) -> str:
+    async def generate(self, messages: List[Dict[str, str]], model: str) -> tuple[str, int, int, float]:
+        """
+        Generate response from model.
+
+        Returns:
+            tuple: (response_text, tokens_sent, tokens_received, duration_seconds)
+        """
         raise NotImplementedError
 
 
@@ -26,11 +184,24 @@ class OllamaBackend(ModelBackend):
     def __init__(self, base_url: str = "http://localhost:11434"):
         self.base_url = base_url
 
-    async def generate(self, messages: List[Dict[str, str]], model: str) -> str:
+    async def generate(self, messages: List[Dict[str, str]], model: str) -> tuple[str, int, int, float]:
+        start_time = time.time()
+
+        # Calculate input tokens
+        input_text = " ".join(msg["content"] for msg in messages)
+        tokens_sent = estimate_tokens(input_text)
+
         try:
             import ollama
             response = ollama.chat(model=model, messages=messages)
-            return response['message']['content']
+            output_text = response['message']['content']
+
+            # Calculate output tokens
+            tokens_received = estimate_tokens(output_text)
+            duration = time.time() - start_time
+
+            return output_text, tokens_sent, tokens_received, duration
+
         except ImportError:
             raise RuntimeError("Ollama package not installed. Run: pip install ollama")
         except Exception as e:
@@ -43,8 +214,13 @@ class LMStudioBackend(ModelBackend):
     def __init__(self, base_url: str = "http://localhost:1234/v1"):
         self.base_url = base_url
 
-    async def generate(self, messages: List[Dict[str, str]], model: str) -> str:
+    async def generate(self, messages: List[Dict[str, str]], model: str) -> tuple[str, int, int, float]:
         """Call LM Studio's OpenAI-compatible API"""
+        start_time = time.time()
+
+        # Calculate input tokens
+        input_text = " ".join(msg["content"] for msg in messages)
+        tokens_sent = estimate_tokens(input_text)
 
         request_data = {
             "model": model,
@@ -64,7 +240,13 @@ class LMStudioBackend(ModelBackend):
 
             with urllib.request.urlopen(req, timeout=120) as response:
                 result = json.loads(response.read().decode('utf-8'))
-                return result['choices'][0]['message']['content']
+                output_text = result['choices'][0]['message']['content']
+
+                # Calculate output tokens
+                tokens_received = estimate_tokens(output_text)
+                duration = time.time() - start_time
+
+                return output_text, tokens_sent, tokens_received, duration
 
         except urllib.error.URLError as e:
             raise RuntimeError(f"LM Studio connection error: {str(e)}. Is LM Studio running on {self.base_url}?")
@@ -79,7 +261,13 @@ class OpenAICompatibleBackend(ModelBackend):
         self.base_url = base_url
         self.api_key = api_key
 
-    async def generate(self, messages: List[Dict[str, str]], model: str) -> str:
+    async def generate(self, messages: List[Dict[str, str]], model: str) -> tuple[str, int, int, float]:
+        start_time = time.time()
+
+        # Calculate input tokens
+        input_text = " ".join(msg["content"] for msg in messages)
+        tokens_sent = estimate_tokens(input_text)
+
         request_data = {
             "model": model,
             "messages": messages,
@@ -99,7 +287,13 @@ class OpenAICompatibleBackend(ModelBackend):
 
             with urllib.request.urlopen(req, timeout=120) as response:
                 result = json.loads(response.read().decode('utf-8'))
-                return result['choices'][0]['message']['content']
+                output_text = result['choices'][0]['message']['content']
+
+                # Calculate output tokens
+                tokens_received = estimate_tokens(output_text)
+                duration = time.time() - start_time
+
+                return output_text, tokens_sent, tokens_received, duration
 
         except Exception as e:
             raise RuntimeError(f"API error: {str(e)}")
@@ -138,7 +332,8 @@ class FeedbackLoop:
         self.history = []
         self.backend = backend
 
-    async def execute_with_feedback(self, task: Dict[str, Any], local_model: str, feedback_history: Optional[List] = None):
+    async def execute_with_feedback(self, task: Dict[str, Any], local_model: str,
+                                     feedback_history: Optional[List] = None, task_id: Optional[str] = None):
         """
         Execute task with local model, but track iterations for remote review
 
@@ -146,6 +341,7 @@ class FeedbackLoop:
             task: Task configuration with 'prompt' and optional 'system_prompt'
             local_model: Model identifier (e.g., "qwen2.5-coder:7b" for LM Studio)
             feedback_history: Previous feedback to incorporate
+            task_id: Task ID for statistics tracking
         """
         if feedback_history is None:
             feedback_history = []
@@ -174,9 +370,15 @@ class FeedbackLoop:
             messages.append({"role": "system", "content": task["system_prompt"]})
         messages.append({"role": "user", "content": prompt})
 
-        # Execute with local model via backend
+        # Execute with local model via backend (now returns tuple with stats)
         try:
-            current_output = await self.backend.generate(messages, local_model)
+            current_output, tokens_sent, tokens_received, duration = await self.backend.generate(messages, local_model)
+
+            # Track statistics if task_id provided
+            if task_id:
+                stats_tracker.record_local_call(task_id, tokens_sent, tokens_received, duration, local_model)
+                stats_tracker.record_iteration(task_id, iteration, duration, tokens_sent, tokens_received)
+
         except Exception as e:
             return {
                 "status": "error",
@@ -191,7 +393,10 @@ class FeedbackLoop:
             "iteration": iteration,
             "output": current_output,
             "model": local_model,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "tokens_sent": tokens_sent,
+            "tokens_received": tokens_received,
+            "duration": duration
         })
 
         # Return for remote review (break here, remote will call back)
@@ -200,7 +405,10 @@ class FeedbackLoop:
             "iteration": iteration,
             "output": current_output,
             "can_iterate": iteration < self.max_iterations,
-            "history": self.history
+            "history": self.history,
+            "tokens_sent": tokens_sent,
+            "tokens_received": tokens_received,
+            "duration": duration
         }
     
     def _build_prompt_with_feedback(self, task, feedback_history, iteration):
@@ -413,13 +621,23 @@ async def call_tool(name: str, arguments: dict):
         ]
 
         try:
-            output = await task_backend.generate(messages, model)
+            output, tokens_sent, tokens_received, duration = await task_backend.generate(messages, model)
+
+            # Simple stats for quick delegation
+            stats = {
+                "tokens_sent": tokens_sent,
+                "tokens_received": tokens_received,
+                "total_tokens": tokens_sent + tokens_received,
+                "duration_seconds": round(duration, 2),
+                "model": model
+            }
+
             return [TextContent(
                 type="text",
                 text=json.dumps({
                     "status": "success",
                     "output": output,
-                    "model": model
+                    "statistics": stats
                 }, indent=2)
             )]
         except Exception as e:
@@ -452,14 +670,18 @@ async def call_tool(name: str, arguments: dict):
                 "feedback_loop": FeedbackLoop(task_backend)
             }
 
+            # Initialize statistics tracking
+            stats_tracker.init_task(task_id)
+
         task_data = active_tasks[task_id]
         model = arguments.get("model", "qwen2.5-coder:7b")
 
-        # Execute with local model
+        # Execute with local model (now with task_id for stats tracking)
         result = await task_data["feedback_loop"].execute_with_feedback(
             arguments,
             model,
-            task_data["feedback"]
+            task_data["feedback"],
+            task_id=task_id
         )
 
         # Handle error case
@@ -500,16 +722,21 @@ async def call_tool(name: str, arguments: dict):
 
         task_data = active_tasks[task_id]
 
-        # Store feedback
+        # Store feedback and track it
         task_data["feedback"].append({
             "issues": arguments["issues"],
             "suggestions": arguments["suggestions"],
             "approved": arguments.get("approve", False)
         })
+        stats_tracker.record_feedback(task_id)
 
         if arguments.get("approve", False):
-            # Approved! Mark as done
+            # Approved! Finalize stats and generate comprehensive report
             task_data["status"] = "approved"
+            stats_tracker.finalize_task(task_id, status="approved")
+
+            # Generate comprehensive statistics report
+            stats_report = stats_tracker.get_task_report(task_id)
 
             return [TextContent(
                 type="text",
@@ -517,19 +744,24 @@ async def call_tool(name: str, arguments: dict):
                     "status": "approved",
                     "message": "Code approved after review",
                     "final_output": task_data["iterations"][-1]["output"],
-                    "total_iterations": len(task_data["iterations"])
+                    "total_iterations": len(task_data["iterations"]),
+                    "statistics": stats_report
                 }, indent=2)
             )]
 
         else:
             # Need another iteration
             if len(task_data["iterations"]) >= 3:
+                stats_tracker.finalize_task(task_id, status="max_iterations_reached")
+                stats_report = stats_tracker.get_task_report(task_id)
+
                 return [TextContent(
                     type="text",
                     text=json.dumps({
                         "status": "max_iterations_reached",
                         "message": "Max iterations reached. Consider handling this task yourself.",
-                        "iterations": len(task_data["iterations"])
+                        "iterations": len(task_data["iterations"]),
+                        "statistics": stats_report
                     }, indent=2)
                 )]
 
@@ -538,7 +770,8 @@ async def call_tool(name: str, arguments: dict):
             result = await task_data["feedback_loop"].execute_with_feedback(
                 task_data["task"],
                 model,
-                task_data["feedback"]
+                task_data["feedback"],
+                task_id=task_id
             )
 
             task_data["iterations"].append(result)
