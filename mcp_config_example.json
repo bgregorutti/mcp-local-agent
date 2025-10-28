@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "local-agents": {
+      "command": "python",
+      "args": ["/Users/baptistegregorutti/Documents/Other/mcp/local_agent_mcp_server.py"],
+      "env": {
+        "BACKEND_TYPE": "lmstudio",
+        "BACKEND_URL": "http://localhost:1234/v1"
+      }
+    }
+  }
+}
