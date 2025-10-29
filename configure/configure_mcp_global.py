@@ -29,7 +29,7 @@ def configure_mcp_global():
     mcp_server_config = {
         "local-agents": {
             "command": "python",
-            "args": [str(Path(__file__).parent / "local_agent_mcp_server.py")],
+            "args": [str(Path(__file__).parent.parent / "local_agent_mcp_server.py")],
             "env": {
                 "BACKEND_TYPE": "lmstudio",
                 "BACKEND_URL": "http://localhost:1234/v1"
@@ -47,14 +47,6 @@ def configure_mcp_global():
 
     print(f"\n✅ MCP server configured GLOBALLY for all projects")
 
-    # Also remove from project-specific if it was there
-    current_project = "/Users/baptistegregorutti/Documents/Other/mcp"
-    if 'projects' in config and current_project in config['projects']:
-        if 'mcpServers' in config['projects'][current_project]:
-            if 'local-agents' in config['projects'][current_project]['mcpServers']:
-                del config['projects'][current_project]['mcpServers']['local-agents']
-                print(f"✅ Removed project-specific config (now using global)")
-
     # Write back
     with open(claude_config, 'w') as f:
         json.dump(config, f, indent=2)
@@ -63,7 +55,7 @@ def configure_mcp_global():
     print(f"   - Scope: ALL PROJECTS")
     print(f"   - Backend: LM Studio")
     print(f"   - URL: http://localhost:1234/v1")
-    print(f"   - Server: {Path(__file__).parent / 'local_agent_mcp_server.py'}")
+    print(f"   - Server: {Path(__file__).parent.parent / 'local_agent_mcp_server.py'}")
 
     print(f"\n🌍 This MCP server will now be available in:")
     print(f"   ✅ Current project")

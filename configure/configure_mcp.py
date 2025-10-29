@@ -33,7 +33,7 @@ def configure_mcp_server():
     mcp_server_config = {
         "local-agents": {
             "command": "python",
-            "args": [str(Path(__file__).parent / "local_agent_mcp_server.py")],
+            "args": [str(Path(__file__).parent.parent / "local_agent_mcp_server.py")],
             "env": {
                 "BACKEND_TYPE": "lmstudio",
                 "BACKEND_URL": "http://localhost:1234/v1"
@@ -67,7 +67,7 @@ def configure_mcp_server():
     print(f"\n📋 Added MCP server: 'local-agents'")
     print(f"   - Backend: LM Studio")
     print(f"   - URL: http://localhost:1234/v1")
-    print(f"   - Server: {Path(__file__).parent / 'local_agent_mcp_server.py'}")
+    print(f"   - Server: {Path(__file__).parent.parent / 'local_agent_mcp_server.py'}")
 
     print(f"\n🔄 Next steps:")
     print(f"   1. Restart Claude Code (close and reopen terminal/VS Code)")
