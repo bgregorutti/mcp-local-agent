@@ -74,13 +74,40 @@ python configure_mcp.py
 
 This adds the MCP server to `~/.claude.json` with the correct path and settings.
 
-### 4. Restart Claude Code
+### 4. Set Up Project Guidelines (Recommended)
+
+Copy the template to your project root and customize it:
+
+```bash
+# For this project
+cp CLAUDE-template.md CLAUDE.md
+
+# Edit the file to match your project
+# - Set language, test command, code style
+# - Adjust delegation preferences
+```
+
+Or create a global default for all projects:
+
+```bash
+# Create global guidelines
+mkdir -p ~/.claude
+cp CLAUDE-template.md ~/.claude/CLAUDE.md
+```
+
+**Why this matters:** While the MCP server configuration makes the tools **available**, the CLAUDE.md file tells Claude Code **when and how to use them** automatically. Think of it as:
+- MCP config = Installing the tool
+- CLAUDE.md = Instructions on when to use it
+
+### 5. Restart Claude Code
 
 Close and reopen VS Code/Claude Code completely. The MCP tools will now be available.
 
 ## 🛠 Configuration Options
 
 ### Environment Variables
+
+**Backend Configuration:**
 
 - `BACKEND_TYPE`: Choose backend
   - `lmstudio` (default) - LM Studio OpenAI-compatible API
@@ -90,6 +117,19 @@ Close and reopen VS Code/Claude Code completely. The MCP tools will now be avail
 - `BACKEND_URL`: Custom backend URL
   - Default for LM Studio: `http://localhost:1234/v1`
   - Default for Ollama: `http://localhost:11434`
+
+**Pricing Configuration (for accurate cost tracking):**
+
+- `REMOTE_INPUT_COST_PER_1K`: Cost per 1K input tokens (default: 0.003)
+- `REMOTE_OUTPUT_COST_PER_1K`: Cost per 1K output tokens (default: 0.015)
+- `LOCAL_COST_PER_1K`: Cost per 1K tokens for local model (default: 0.0)
+
+Example for Claude Sonnet 4.5:
+```bash
+export REMOTE_INPUT_COST_PER_1K=0.003   # $3 per million tokens
+export REMOTE_OUTPUT_COST_PER_1K=0.015  # $15 per million tokens
+export LOCAL_COST_PER_1K=0.0            # Local models are free
+```
 
 ### Per-Task Configuration
 
@@ -180,7 +220,11 @@ You can also specify backend per task:
 
 ### 4. `compare_iterations` (Analysis Tool)
 
-View all iterations for a task to see improvement over time.
+View all iterations for a task to see improvement over time. Now includes statistics for the task.
+
+### 5. `get_statistics_summary` 📊 (Reporting Tool)
+
+Get comprehensive cumulative statistics across all delegation tasks. See the Statistics & Performance Tracking section below for details.
 
 ## 🎓 Decision Matrix for Claude Code
 
@@ -205,6 +249,34 @@ View all iterations for a task to see improvement over time.
 - 🎯 Final integration & review
 
 ## 📊 Statistics & Performance Tracking
+
+### Real-Time Statistics Reporting
+
+**NEW:** Statistics are now reported on **every tool call**, not just at completion. This provides complete visibility into delegation costs and savings.
+
+### Available Statistics Tools
+
+#### 5. `get_statistics_summary` 📊 (New!)
+
+Get cumulative statistics across all delegation tasks:
+
+```json
+{
+  "cumulative_statistics": {
+    "total_tasks": 47,
+    "task_status_breakdown": {
+      "successful": 42,
+      "failed": 3,
+      "approved": 38,
+      "max_iterations_reached": 2
+    },
+    "cost_analysis": {
+      "total_savings_usd": 3.71,
+      "savings_percent": 86.9
+    }
+  }
+}
+```
 
 ### Comprehensive Statistics Report
 
@@ -273,15 +345,21 @@ When a task is completed (approved or max iterations reached), the system genera
    - Average iteration time
 
 3. **Cost Analysis**
-   - Local model cost: $0.00 (free)
+   - Local model cost (configurable, default: $0.00)
    - Estimated cost if task was done fully remote
-   - Actual cost (remote review only)
+   - Actual cost (remote review + local usage)
    - Savings in USD and percentage
+   - Pricing configuration used
 
 4. **Efficiency Metrics**
    - Number of iterations needed
    - Feedback rounds
    - Iteration breakdown with detailed stats
+
+5. **Persistence**
+   - All statistics automatically saved to `.mcp_stats.json`
+   - Data persists across Claude Code sessions
+   - Includes both active and archived tasks (100 task limit in memory)
 
 ### How This Helps You (The Orchestrator)
 
